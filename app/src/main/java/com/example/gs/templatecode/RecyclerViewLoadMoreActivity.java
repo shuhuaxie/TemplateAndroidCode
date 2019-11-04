@@ -20,11 +20,14 @@ public class RecyclerViewLoadMoreActivity extends BaseActivity {
     public static final int INIT_PAGE = 0;
     boolean mRequesting = false;
     private SimplyAdapter mAdapter;
+    private boolean mHasMore = true;
+    private View mLlEmpty;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_recyclerview_load_more);
+        mLlEmpty = findViewById(R.id.ll_empty);
         mRecyclerView = findViewById(R.id.recycler_view);
         initRecyclerView();
         requestData();
@@ -38,7 +41,9 @@ public class RecyclerViewLoadMoreActivity extends BaseActivity {
         mRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
-                if (((LinearLayoutManager) mRecyclerView.
+                // SwipeRefreshLayout 的刷新在页面没有被全部填充时也会触发这个,
+                // 解决方案：加载了第一页继续加载第二页，使mHasMore为false，或者填充全部页面。
+                if (mHasMore && ((LinearLayoutManager) mRecyclerView.
                         getLayoutManager()).findLastVisibleItemPosition()
                         == mAdapter.getItemCount() - 1) {
                     requestData();
@@ -56,19 +61,58 @@ public class RecyclerViewLoadMoreActivity extends BaseActivity {
     private void requestData() {
         if (!mRequesting) {
             mRequesting = true;
+        } else {
+            return;
         }
         if (mCurrentPage == INIT_PAGE) {
             showLoading();
         }
         // request by page
-        mAdapter.addData(mockData());
+        ArrayList<SimpleInfo> simpleInfos = mockData(mCurrentPage);
+        // 请求回调
+        onGetData(simpleInfos);
+    }
+
+    private void onGetData(ArrayList<SimpleInfo> simpleInfos) {
+        if (simpleInfos == null || simpleInfos.size() != 0) {
+            mHasMore = false;
+            if (mCurrentPage == INIT_PAGE) {
+                mLlEmpty.setVisibility(View.VISIBLE);
+                mRecyclerView.setVisibility(View.GONE);
+            }
+        } else {
+            if (mCurrentPage == INIT_PAGE) {
+                mAdapter.clearData();
+            }
+            mLlEmpty.setVisibility(View.GONE);
+            mRecyclerView.setVisibility(View.VISIBLE);
+        }
+        mAdapter.addData(simpleInfos);
+        mRequesting = false;
         dismissLoading();
         mCurrentPage++;
     }
 
+    //上拉刷新 或者 换一种请求渠道
+    public void resetRequestStatus() {
+        mCurrentPage = INIT_PAGE;
+        mRequesting = false;
+        mHasMore = true;
+        if (mAdapter.getItemCount() > 0) {
+            mRecyclerView.scrollToPosition(0);
+        }
+    }
 
     public static class SimplyAdapter extends RecyclerView.Adapter<SimpleViewHolder> {
+        private OnItemClickListener mItemClickLis;
         public ArrayList<SimpleInfo> mSimpleInfos = new ArrayList<>();
+
+        SimplyAdapter(OnItemClickListener lis) {
+            mItemClickLis = lis;
+        }
+
+        SimplyAdapter() {
+        }
 
         @NonNull
         @Override
@@ -93,6 +137,10 @@ public class RecyclerViewLoadMoreActivity extends BaseActivity {
             notifyDataSetChanged();
         }
 
+        public void clearData() {
+            mSimpleInfos.clear();
+        }
+
 
         public static class EmptyViewHolder extends RecyclerView.ViewHolder {
             public EmptyViewHolder(View view) {
@@ -108,7 +156,11 @@ public class RecyclerViewLoadMoreActivity extends BaseActivity {
                 super(itemView);
             }
 
-            abstract void bindView(T listInflateData);
+            abstract void bindView(T listInflateData, OnItemClickListener<T> listener);
+        }
+
+        public interface OnItemClickListener<T> {
+            void onClick(T t);
         }
     }
 
@@ -138,14 +190,16 @@ public class RecyclerViewLoadMoreActivity extends BaseActivity {
     }
 
 
-    private ArrayList<SimpleInfo> mockData() {
+    private ArrayList<SimpleInfo> mockData(int pageNum) {
         ArrayList<SimpleInfo> simpleInfos = new ArrayList();
-        for (int i = mCurrentPage * 10; i < mCurrentPage * 10 + 15; i++) {
-            SimpleInfo si = new SimpleInfo();
-            si.setName("q_p~ " + i);
-            simpleInfos.add(si);
-        }
+        if (pageNum != 5)
+            for (int i = pageNum * 10; i < pageNum * 10 + 15; i++) {
+                SimpleInfo si = new SimpleInfo();
+                si.setName("q_p~ " + i);
+                simpleInfos.add(si);
+            }
 
         return simpleInfos;
     }
+
 }
